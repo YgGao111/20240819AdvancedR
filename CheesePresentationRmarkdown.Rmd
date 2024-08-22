@@ -1,0 +1,111 @@
+---
+title: "CheeseProject"
+author: "kitoh"
+date: "2024-08-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# library
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+
+```
+
+## Dataset
+We love cheeses and selected following;
+```{r cheeses}
+cheeses <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2024/2024-06-04/cheeses.csv')
+cheeses <- cheeses[-which(is.na(cheeses$fat_content)),] # removed rows which do not contain fat content 
+
+```
+- What is the relationship between milk and fat content, flavor?   
+- Which countries do produce the cheeses?
+
+## Milks used to make cheeses
+
+
+## Fat Ratio and milk
+
+In this dataset, fat concent is a little bit messy
+```{r pressure, echo=T}
+unique(cheeses$fat_content)[1:10]
+```
+Therefore I set a function which converts them into "double"
+
+```{r fat concent cleaning}
+fatcont_func <- function(value){
+  
+  if(sub("%", "", value) == value){
+    fatpar <- sub(" g.+", "", value) %>% as.double()
+    
+  }else if(sub("-", "", value) == value){
+    fatpar <- sub("%", "", value) %>% as.numeric()
+    
+  }else{
+    min <- sub("-.+", "", value) %>% as.integer()
+    max <- sub(".+-", "", value) %>% sub("%", "", .) %>% as.integer()
+    fatpar <- mean(min, max)
+  }
+  return(fatpar)
+}
+
+fat_content_cleaned <- c()
+for (i in cheeses$fat_content){
+ 
+  fat_content_cleaned <- c(fat_content_cleaned, fatcont_func(i))
+  
+}
+cheeses$fat_content_cleaned <- fat_content_cleaned
+
+```
+Checking the result
+```{r check cleaned fat content, echo=T}
+head(fat_content_cleaned)
+typeof(fat_content_cleaned)
+
+```
+
+Then, fat ratio of each milk cheeses was visualized.
+```{r plot three milk, echo=T}
+cheeses %>% 
+  filter(., milk %in% c("cow", "goat", "sheep")) %>% 
+  group_by(., milk) %>% 
+  summarise(mean_fat = mean(fat_content_cleaned), 
+            sd_fat = sd(fat_content_cleaned)) %>% 
+  ggplot(., aes(x = milk, y = mean_fat, 
+                ymin = mean_fat - sd_fat, ymax = mean_fat + sd_fat, 
+                group = milk)) +
+  geom_bar(stat = "identity", fill = c("cow" = "gray9", "goat" = "brown", "sheep" = "yellow")) + geom_errorbar(width = 0.5) +
+  theme_cowplot(18) +
+  xlab("") +
+  ylab("Mean fat ratio [%]") +
+  labs(title = "Fat Ratio of cheeses")
+```
+
+## Fat Ratio and milk - combination of milk
+What happens when the milks are combined?
+```{r plot five milk, echo=T}
+cheeses %>% 
+  filter(., milk %in% c("cow", "goat", "sheep", "cow, goat", "cow, sheep")) %>% 
+  group_by(., milk) %>% 
+  summarise(mean_fat = mean(fat_content_cleaned), sd_fat = sd(fat_content_cleaned)) %>% 
+  ggplot(., aes(x = milk, y = mean_fat, 
+                ymin = mean_fat - sd_fat, ymax = mean_fat + sd_fat, group = milk, fill = milk)) +
+  geom_bar(stat = "identity", fill = c("cow" = "gray9", "cow, goat" = "tomato", "cow, sheep" = "firebrick3", "goat" = "brown", "sheep" = "yellow" )) +
+  geom_errorbar(width = 0.5) +
+  theme_cowplot(18) +
+  xlab("") +
+  ylab("Mean fat ratio [%]") +
+  labs(title = "Fat Ratio of cheeses")
+```
+
+## Short summary 1 - fat of cheeses
+#### Sheep: high fat   
+#### cow: middle   
+#### goat: low fat
+
+
