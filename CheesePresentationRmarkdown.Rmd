@@ -108,4 +108,182 @@ cheeses %>%
 #### cow: middle   
 #### goat: low fat
 
+#########################################
+
+# Code for creating stack bar plots of distributions of animal, flavor, and aroma
+# In addition, it creates distribution of flavor and aroma by dairy animals
+
+#########################################
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(plotly)
+library(tidyr)
+
+cheeses <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2024/2024-06-04/cheeses.csv')
+milk <- unique(cheeses$milk)
+
+# Identify the number of NA
+
+sum(is.na(cheeses$fat_content))
+sum(is.na(cheeses$calcium_content))
+sum(is.na(cheeses$flavor))
+sum(is.na(cheeses$aroma))
+
+# Subset data
+AF <- cheeses[,c('flavor','aroma','milk')]
+
+# Count the number of unique flavor and aroma in the data frame
+AF %>% str_count(flavor)
+AF %>% count(aroma)
+
+
+#Split characters in flavor  - > This did not work
+#stringr::str_split_1(AF$flavor)        
+# lapply(AF$flavor, function(str) {
+#   if (is.na(str)) NA else stringr::str_split_1(str, pattern = ", ")
+# } )
+
+# Make a series of small functions to separate multiple variables divided by ,
+split_comma <- function(var) { 
+  lapply(var, function(str) {
+    if (is.na(str)) NA_character_ else stringr::str_split_1(str, pattern = ", ")
+  })
+}
+
+unnest_split_comma <- function(df, var){
+  df[[var]] <- split_comma(df[[var]])
+  tidyr::unnest_longer(df, all_of(var)) 
+}
+
+AF %>% 
+  unnest_split_comma("flavor") %>% 
+  unnest_split_comma("aroma") %>% 
+  unnest_split_comma("milk")
+
+multi_unnest_split_comma <- function(df, vars){
+  for (var in vars) {
+    df <- unnest_split_comma(df, var)
+  }
+  df
+}
+split_df <- multi_unnest_split_comma(AF, c("flavor", "aroma","milk"))
+
+
+# Count the occurrence of milk, flavor, aroma
+milk_counts <- split_df %>%
+  filter(!is.na(milk)) %>% 
+  count(milk)
+
+aroma_counts <- split_df %>%
+  filter(!is.na(aroma)) %>% 
+  count(aroma)
+
+flavor_counts <- split_df %>%
+  filter(!is.na(flavor)) %>% 
+  count(flavor)
+
+# Add percentage columns for the plots
+total_count_milk <- sum(milk_counts$n)
+total_count_aroma <- sum(aroma_counts$n)
+total_count_flavor <- sum(flavor_counts$n)
+
+# Milk
+milk_counts <- milk_counts %>%
+  mutate(percentage = (n / total_count_milk) * 100) %>% 
+  mutate(milk = factor(milk, levels = milk[order(percentage, decreasing = TRUE)]))
+
+milk_labels <- milk_counts %>%
+  group_by(milk) %>%
+  summarise(total_percentage = sum(percentage)) %>%
+  mutate(label = paste0(milk, " (", round(total_percentage,1), "%)"))
+
+milk_counts2 <- milk_counts %>%
+  left_join(milk_labels, by = "milk") %>% 
+  mutate(label = factor(label, levels = label[order(percentage, decreasing = TRUE)]))
+
+
+# Aroma
+aroma_counts <- aroma_counts %>%
+  mutate(percentage = (n / total_count_aroma) * 100) %>% 
+  mutate(aroma = factor(aroma, levels = aroma[order(percentage, decreasing = TRUE)]))
+
+aroma_labels <- aroma_counts %>%
+  group_by(aroma) %>%
+  summarise(total_percentage = sum(percentage)) %>%
+  mutate(label = paste0(aroma, " (", round(total_percentage,1), "%)"))
+
+aroma_counts2 <- aroma_counts %>%
+  left_join(aroma_labels, by = "aroma") %>% 
+  mutate(label = factor(label, levels = label[order(percentage, decreasing = TRUE)]))
+
+
+
+# flavor
+flavor_counts <- flavor_counts %>%
+  mutate(percentage = (n / total_count_flavor) * 100) %>% 
+  mutate(flavor = factor(flavor, levels = flavor[order(percentage, decreasing = TRUE)]))
+
+flavor_labels <- flavor_counts %>%
+  group_by(flavor) %>%
+  summarise(total_percentage = sum(percentage)) %>%
+  mutate(label = paste0(flavor, " (", round(total_percentage,1), "%)"))
+
+flavor_counts2 <- flavor_counts %>%
+  left_join(flavor_labels, by = "flavor") %>% 
+  mutate(label = factor(label, levels = label[order(percentage, decreasing = TRUE)]))
+
+
+
+
+# Create bar stack plots
+ggplot(milk_counts2, aes(fill=label, y=percentage, x="")) +  # plot for Milk
+  geom_bar(position="fill", stat="identity") +  labs(
+    title = "Percentage Distribution of dairy animals",
+    x = "Dairy animals",  # Change as needed
+    y = "Percentage", # Change as needed
+    fill = "Dairy animals" # Legend title
+  ) +
+  theme_minimal() 
+
+ggplot(aroma_counts2, aes(fill=label, y=percentage, x="")) +  # plot for aroma
+  geom_bar(position="fill", stat="identity") +  labs(
+    title = "Distribution of cheese aroma",
+    x = "aroma",  # Change as needed
+    y = "Percentage", # Change as needed
+    fill = "Dairy animals" # Legend title
+  ) +
+  theme_minimal()
+
+ggplot(flavor_counts2, aes(fill=label, y=percentage, x="")) +  # plot for flavor
+  geom_bar(position="fill", stat="identity") +  labs(
+    title = "Distribution of cheese flavor",
+    x = "flavor",  # Change as needed
+    y = "Percentage", # Change as needed
+    fill = "Dairy animals" # Legend title
+  ) +
+  theme_minimal()
+
+# Count the number of flavor and aroma by grouping milk
+milk_group <- split_df %>%
+  group_by(milk) %>%
+  filter(!is.na(milk)) %>% 
+  summarise(across(everything(), ~ n_distinct(., na.rm = TRUE))) %>% 
+  mutate(milk = factor(milk, levels = milk[order(flavor, decreasing = TRUE)])) %>% 
+  pivot_longer(!milk, names_to = "result", values_to = "count")
+
+# Create grouped bar chart
+ggplot(data = milk_group, aes(x = result, y = count, fill = milk)) +
+  geom_bar(stat = "identity", position = position_dodge(), alpha = 0.75)  + theme_minimal() + 
+  labs(
+    title = "Distribution of flavor and aroma by dairy animals",
+    x = "Types",  # Change as needed
+    y = "Frequency", # Change as needed
+  )
+#########################################
+
+# END
+
+#########################################
+
 
